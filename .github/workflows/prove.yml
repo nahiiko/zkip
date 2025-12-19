@@ -2,9 +2,6 @@ name: Build Program
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-  pull_request:
 
 env:
   FOUNDRY_PROFILE: ci
