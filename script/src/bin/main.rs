@@ -11,11 +11,14 @@
 //! ```
 
 use alloy_sol_types::SolType;
-use anyhow::Context;
+use anyhow::{bail, Context};
 use clap::Parser;
 use sp1_sdk::{include_elf, ProverClient, SP1Stdin};
+use std::collections::HashMap;
+use std::fs::File;
+use std::io::{BufRead, BufReader};
 use std::time::{SystemTime, UNIX_EPOCH};
-use zkip_lib::{ip_to_u32, u32_to_ip, PublicValuesStruct};
+use zkip_lib::{ip_to_u32, PublicValuesStruct};
 
 /// The ELF (executable and linkable format) file for the Succinct RISC-V zkVM.
 pub const ZKIP_ELF: &[u8] = include_elf!("zkip-program");
@@ -29,6 +32,61 @@ struct Args {
 
     #[arg(long)]
     prove: bool,
+
+    /// IP address to test (e.g., "8.8.8.8")
+    #[arg(long, default_value = "8.8.8.8")]
+    ip: String,
+
+    /// Comma-separated country codes to exclude (e.g., "FR,US,DE")
+    #[arg(long, default_value = "FR")]
+    exclude: String,
+}
+
+/// Load country codes from CSV file.
+/// Returns a map of alpha-2 code -> numeric code (e.g., "FR" -> 250)
+fn load_country_codes() -> anyhow::Result<HashMap<String, u16>> {
+    let csv_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../data/countries.csv");
+    let file = File::open(csv_path).context("Failed to open countries.csv")?;
+    let reader = BufReader::new(file);
+
+    let mut codes = HashMap::new();
+    for (i, line) in reader.lines().enumerate() {
+        if i == 0 {
+            continue; // Skip header
+        }
+        let line = line.context("Failed to read line")?;
+        let fields: Vec<&str> = line.split(',').collect();
+        if fields.len() >= 4 {
+            let alpha2 = fields[1].to_uppercase();
+            if let Ok(numeric) = fields[3].parse::<u16>() {
+                codes.insert(alpha2, numeric);
+            }
+        }
+    }
+    Ok(codes)
+}
+
+/// Parse comma-separated country codes and resolve to numeric codes.
+fn parse_excluded_countries(exclude_arg: &str) -> anyhow::Result<Vec<u16>> {
+    let country_codes = load_country_codes()?;
+    let mut result = Vec::new();
+
+    for code in exclude_arg.split(',') {
+        let code = code.trim().to_uppercase();
+        if code.is_empty() {
+            continue;
+        }
+        match country_codes.get(&code) {
+            Some(&numeric) => result.push(numeric),
+            None => bail!("Unknown country code: {}", code),
+        }
+    }
+
+    if result.is_empty() {
+        bail!("No valid country codes provided");
+    }
+
+    Ok(result)
 }
 
 fn main() -> anyhow::Result<()> {
@@ -47,24 +105,19 @@ fn main() -> anyhow::Result<()> {
     // Setup the prover client.
     let client = ProverClient::from_env();
 
-    // Setup test inputs
-    // US IP - Google DNS (should return true = excluded from France)
-    let ip_str = "8.8.8.8";
-    // France IP - OVH (should return false = NOT excluded, IS in France)
-    // let ip_str = "91.121.0.1";
+    // Parse CLI arguments
+    let ip = ip_to_u32(&args.ip).context("failed to parse IP address")?;
+    let excluded_countries = parse_excluded_countries(&args.exclude)?;
 
-    let ip = ip_to_u32(ip_str).context("failed to parse IP address")?;
-
-    // France IP range (OVH: 91.121.0.0 - 91.121.31.255)
+    // TODO: In production, these ranges would come from a GeoIP database
+    // For now, using a hardcoded France IP range (OVH: 91.121.0.0 - 91.121.31.255)
     let excluded_ranges: Vec<(u32, u32)> = vec![
         (ip_to_u32("91.121.0.0")?, ip_to_u32("91.121.31.255")?),
     ];
 
-    // Public inputs
-    let excluded_countries: Vec<u16> = vec![250]; // France ISO code
     let timestamp: u32 = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .expect("System clock is before Unix epoch")
+        .context("System clock is before Unix epoch")?
         .as_secs() as u32;
 
     // Write inputs to stdin (must match order in program!)
@@ -76,7 +129,7 @@ fn main() -> anyhow::Result<()> {
 
     println!(
         "Testing IP: {} ({}) against excluded countries: {:?}",
-        ip_str, ip, excluded_countries
+        args.ip, ip, excluded_countries
     );
 
     if args.execute {
