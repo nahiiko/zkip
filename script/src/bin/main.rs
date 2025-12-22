@@ -11,6 +11,7 @@
 //! ```
 
 use alloy_sol_types::SolType;
+use anyhow::Context;
 use clap::Parser;
 use sp1_sdk::{include_elf, ProverClient, SP1Stdin};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -30,7 +31,7 @@ struct Args {
     prove: bool,
 }
 
-fn main() {
+fn main() -> anyhow::Result<()> {
     // Setup the logger.
     sp1_sdk::utils::setup_logger();
     dotenv::dotenv().ok();
@@ -76,11 +77,15 @@ fn main() {
 
     if args.execute {
         // Execute the program
-        let (output, report) = client.execute(ZKIP_ELF, &stdin).run().unwrap();
+        let (output, report) = client
+            .execute(ZKIP_ELF, &stdin)
+            .run()
+            .context("failed to execute zkvm program")?;
         println!("Program executed successfully.");
 
         // Read the output.
-        let decoded = PublicValuesStruct::abi_decode(output.as_slice()).unwrap();
+        let decoded = PublicValuesStruct::abi_decode(output.as_slice())
+            .context("failed to decode public values")?;
         let PublicValuesStruct {
             is_excluded,
             timestamp,
@@ -106,12 +111,13 @@ fn main() {
         let proof = client
             .prove(&pk, &stdin)
             .run()
-            .expect("failed to generate proof");
+            .context("failed to generate proof")?;
 
         println!("Successfully generated proof!");
 
         // Verify the proof.
-        client.verify(&proof, &vk).expect("failed to verify proof");
+        client.verify(&proof, &vk).context("failed to verify proof")?;
         println!("Successfully verified proof!");
     }
+    Ok(())
 }
