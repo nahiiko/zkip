@@ -15,7 +15,7 @@ use anyhow::Context;
 use clap::Parser;
 use sp1_sdk::{include_elf, ProverClient, SP1Stdin};
 use std::time::{SystemTime, UNIX_EPOCH};
-use zkip_lib::PublicValuesStruct;
+use zkip_lib::{ip_to_u32, u32_to_ip, PublicValuesStruct};
 
 /// The ELF (executable and linkable format) file for the Succinct RISC-V zkVM.
 pub const ZKIP_ELF: &[u8] = include_elf!("zkip-program");
@@ -49,12 +49,16 @@ fn main() -> anyhow::Result<()> {
 
     // Setup test inputs
     // US IP - Google DNS (should return true = excluded from France)
-    let ip: u32 = 134_744_072; // 8.8.8.8
-                               // France IP - OVH (should return false = NOT excluded, IS in France)
-                               // let ip: u32 = 1_534_132_225;  // 91.121.0.1
+    let ip_str = "8.8.8.8";
+    // France IP - OVH (should return false = NOT excluded, IS in France)
+    // let ip_str = "91.121.0.1";
+
+    let ip = ip_to_u32(ip_str).context("failed to parse IP address")?;
 
     // France IP range (OVH: 91.121.0.0 - 91.121.31.255)
-    let excluded_ranges: Vec<(u32, u32)> = vec![(1_534_132_224, 1_534_140_415)];
+    let excluded_ranges: Vec<(u32, u32)> = vec![
+        (ip_to_u32("91.121.0.0")?, ip_to_u32("91.121.31.255")?),
+    ];
 
     // Public inputs
     let excluded_countries: Vec<u16> = vec![250]; // France ISO code
@@ -71,8 +75,8 @@ fn main() -> anyhow::Result<()> {
     stdin.write(&timestamp);
 
     println!(
-        "Testing IP: {} against excluded countries: {:?}",
-        ip, excluded_countries
+        "Testing IP: {} ({}) against excluded countries: {:?}",
+        ip_str, ip, excluded_countries
     );
 
     if args.execute {
