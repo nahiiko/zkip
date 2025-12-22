@@ -18,14 +18,17 @@ use sp1_sdk::{
     include_elf, HashableKey, ProverClient, SP1ProofWithPublicValues, SP1Stdin, SP1VerifyingKey,
 };
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::{BufRead, BufReader};
+use std::fs::{self, File};
+use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use zkip_lib::{ip_to_u32, PublicValuesStruct};
 
 /// The ELF (executable and linkable format) file for the Succinct RISC-V zkVM.
 pub const ZKIP_ELF: &[u8] = include_elf!("zkip-program");
+
+const GEOIP_URL: &str = "https://cdn.jsdelivr.net/npm/@ip-location-db/geo-whois-asn-country/geo-whois-asn-country-ipv4-num.csv";
+const CACHE_MAX_AGE_DAYS: u32 = 30;
 
 /// The arguments for the EVM command.
 #[derive(Parser, Debug)]
@@ -41,6 +44,10 @@ struct EVMArgs {
 
     #[arg(long, value_enum, default_value = "groth16")]
     system: ProofSystem,
+
+    /// Force refresh the GeoIP database
+    #[arg(long)]
+    refresh: bool,
 }
 
 /// Enum representing the available proof systems
@@ -60,6 +67,71 @@ struct SP1ZkipProofFixture {
     vkey: String,
     public_values: String,
     proof: String,
+}
+
+fn get_cache_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../data/ipv4-country.csv")
+}
+
+fn is_cache_stale(path: &PathBuf) -> bool {
+    let Ok(metadata) = fs::metadata(path) else {
+        return true;
+    };
+    let Ok(modified) = metadata.modified() else {
+        return true;
+    };
+    let Ok(age) = SystemTime::now().duration_since(modified) else {
+        return true;
+    };
+    age > Duration::from_secs((CACHE_MAX_AGE_DAYS * 24 * 60 * 60) as u64)
+}
+
+fn fetch_geoip_database(path: &PathBuf) -> anyhow::Result<()> {
+    println!("Fetching GeoIP database from {}...", GEOIP_URL);
+
+    let response = reqwest::blocking::get(GEOIP_URL)
+        .context("Failed to fetch GeoIP database")?;
+
+    if !response.status().is_success() {
+        bail!("HTTP error: {}", response.status());
+    }
+
+    let content = response.text().context("Failed to read response")?;
+
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).context("Failed to create data directory")?;
+    }
+
+    let mut file = File::create(path).context("Failed to create cache file")?;
+    file.write_all(content.as_bytes()).context("Failed to write cache file")?;
+
+    println!("GeoIP database cached to {:?}", path);
+    Ok(())
+}
+
+fn ensure_geoip_database(refresh: bool) -> anyhow::Result<PathBuf> {
+    let path = get_cache_path();
+
+    if refresh || !path.exists() || is_cache_stale(&path) {
+        let reason = if refresh {
+            "refresh requested"
+        } else if !path.exists() {
+            "cache not found"
+        } else {
+            "cache older than 30 days"
+        };
+        println!("Updating GeoIP database ({})...", reason);
+
+        if let Err(e) = fetch_geoip_database(&path) {
+            if path.exists() {
+                eprintln!("Warning: Failed to fetch GeoIP database: {}. Using cached version.", e);
+            } else {
+                return Err(e);
+            }
+        }
+    }
+
+    Ok(path)
 }
 
 /// Load country codes from CSV file.
@@ -86,9 +158,10 @@ fn load_country_codes() -> anyhow::Result<HashMap<String, u16>> {
 }
 
 /// Parse comma-separated country codes and resolve to numeric codes.
-fn parse_excluded_countries(exclude_arg: &str) -> anyhow::Result<Vec<u16>> {
+fn parse_excluded_countries(exclude_arg: &str) -> anyhow::Result<(Vec<String>, Vec<u16>)> {
     let country_codes = load_country_codes()?;
-    let mut result = Vec::new();
+    let mut alpha2_codes = Vec::new();
+    let mut numeric_codes = Vec::new();
 
     for code in exclude_arg.split(',') {
         let code = code.trim().to_uppercase();
@@ -96,46 +169,65 @@ fn parse_excluded_countries(exclude_arg: &str) -> anyhow::Result<Vec<u16>> {
             continue;
         }
         match country_codes.get(&code) {
-            Some(&numeric) => result.push(numeric),
+            Some(&numeric) => {
+                alpha2_codes.push(code);
+                numeric_codes.push(numeric);
+            }
             None => bail!("Unknown country code: {}", code),
         }
     }
 
-    if result.is_empty() {
+    if numeric_codes.is_empty() {
         bail!("No valid country codes provided");
     }
 
-    Ok(result)
+    Ok((alpha2_codes, numeric_codes))
+}
+
+/// Load IPv4 ranges for specified countries from the GeoIP database.
+fn load_ip_ranges_for_countries(path: &PathBuf, country_codes: &[String]) -> anyhow::Result<Vec<(u32, u32)>> {
+    let file = File::open(path).context("Failed to open GeoIP database")?;
+    let reader = BufReader::new(file);
+
+    let mut ranges = Vec::new();
+    for line in reader.lines() {
+        let line = line.context("Failed to read line")?;
+        let fields: Vec<&str> = line.split(',').collect();
+        if fields.len() >= 3 {
+            let country = fields[2].to_uppercase();
+            if country_codes.contains(&country) {
+                let start: u32 = fields[0].parse().context("Invalid start IP")?;
+                let end: u32 = fields[1].parse().context("Invalid end IP")?;
+                ranges.push((start, end));
+            }
+        }
+    }
+
+    Ok(ranges)
 }
 
 fn main() -> anyhow::Result<()> {
-    // Setup the logger.
     sp1_sdk::utils::setup_logger();
 
-    // Parse the command line arguments.
     let args = EVMArgs::parse();
 
-    // Setup the prover client.
-    let client = ProverClient::from_env();
+    // Ensure GeoIP database is available and fresh
+    let geoip_path = ensure_geoip_database(args.refresh)?;
 
-    // Setup the program.
+    let client = ProverClient::from_env();
     let (pk, vk) = client.setup(ZKIP_ELF);
 
-    // Parse inputs
     let ip = ip_to_u32(&args.ip).context("failed to parse IP address")?;
-    let excluded_countries = parse_excluded_countries(&args.exclude)?;
+    let (alpha2_codes, excluded_countries) = parse_excluded_countries(&args.exclude)?;
 
-    // TODO: In production, these ranges would come from a GeoIP database
-    let excluded_ranges: Vec<(u32, u32)> = vec![
-        (ip_to_u32("91.121.0.0")?, ip_to_u32("91.121.31.255")?),
-    ];
+    let excluded_ranges = load_ip_ranges_for_countries(&geoip_path, &alpha2_codes)?;
+    println!("Loaded {} IP ranges for {:?}", excluded_ranges.len(), alpha2_codes);
 
     let timestamp: u32 = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .context("System clock is before Unix epoch")?
         .as_secs() as u32;
 
-    // Setup the inputs.
     let mut stdin = SP1Stdin::new();
     stdin.write(&ip);
     stdin.write(&excluded_ranges);
@@ -146,7 +238,6 @@ fn main() -> anyhow::Result<()> {
     println!("Excluded countries: {:?}", excluded_countries);
     println!("Proof System: {:?}", args.system);
 
-    // Generate the proof based on the selected proof system.
     let proof = match args.system {
         ProofSystem::Plonk => client.prove(&pk, &stdin).plonk().run(),
         ProofSystem::Groth16 => client.prove(&pk, &stdin).groth16().run(),
@@ -164,7 +255,6 @@ fn create_proof_fixture(
     vk: &SP1VerifyingKey,
     system: ProofSystem,
 ) {
-    // Deserialize the public values.
     let bytes = proof.public_values.as_slice();
     let PublicValuesStruct {
         is_excluded,
@@ -172,7 +262,6 @@ fn create_proof_fixture(
         excluded_countries,
     } = PublicValuesStruct::abi_decode(bytes).unwrap();
 
-    // Create the testing fixture so we can test things end-to-end.
     let fixture = SP1ZkipProofFixture {
         is_excluded,
         timestamp,
@@ -182,13 +271,10 @@ fn create_proof_fixture(
         proof: format!("0x{}", hex::encode(proof.bytes())),
     };
 
-    // The verification key is used to verify that the proof corresponds to the execution of the
-    // program on the given input.
     println!("Verification Key: {}", fixture.vkey);
     println!("Public Values: {}", fixture.public_values);
     println!("Proof Bytes: {}", fixture.proof);
 
-    // Save the fixture to a file.
     let fixture_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../contracts/src/fixtures");
     std::fs::create_dir_all(&fixture_path).expect("failed to create fixture path");
     std::fs::write(
