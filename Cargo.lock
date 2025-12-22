@@ -1420,38 +1420,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "fibonacci-lib"
-version = "0.1.0"
-dependencies = [
- "alloy-sol-types",
-]
-
-[[package]]
-name = "fibonacci-program"
-version = "0.1.0"
-dependencies = [
- "alloy-sol-types",
- "fibonacci-lib",
- "sp1-zkvm",
-]
-
-[[package]]
-name = "fibonacci-script"
-version = "0.1.0"
-dependencies = [
- "alloy-sol-types",
- "clap",
- "dotenv",
- "fibonacci-lib",
- "hex",
- "serde",
- "serde_json",
- "sp1-build",
- "sp1-sdk",
- "tracing",
-]
-
-[[package]]
 name = "fixed-hash"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5872,4 +5840,36 @@ dependencies = [
  "sha2",
  "sha3",
  "subtle",
+]
+
+[[package]]
+name = "zkip-lib"
+version = "0.1.0"
+dependencies = [
+ "alloy-sol-types",
+]
+
+[[package]]
+name = "zkip-program"
+version = "0.1.0"
+dependencies = [
+ "alloy-sol-types",
+ "sp1-zkvm",
+ "zkip-lib",
+]
+
+[[package]]
+name = "zkip-script"
+version = "0.1.0"
+dependencies = [
+ "alloy-sol-types",
+ "clap",
+ "dotenv",
+ "hex",
+ "serde",
+ "serde_json",
+ "sp1-build",
+ "sp1-sdk",
+ "tracing",
+ "zkip-lib",
 ]

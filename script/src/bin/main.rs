@@ -12,11 +12,12 @@
 
 use alloy_sol_types::SolType;
 use clap::Parser;
-use fibonacci_lib::PublicValuesStruct;
 use sp1_sdk::{include_elf, ProverClient, SP1Stdin};
+use std::time::{SystemTime, UNIX_EPOCH};
+use zkip_lib::PublicValuesStruct;
 
 /// The ELF (executable and linkable format) file for the Succinct RISC-V zkVM.
-pub const FIBONACCI_ELF: &[u8] = include_elf!("fibonacci-program");
+pub const ZKIP_ELF: &[u8] = include_elf!("zkip-program");
 
 /// The arguments for the command.
 #[derive(Parser, Debug)]
@@ -27,9 +28,6 @@ struct Args {
 
     #[arg(long)]
     prove: bool,
-
-    #[arg(long, default_value = "20")]
-    n: u32,
 }
 
 fn main() {
@@ -48,34 +46,61 @@ fn main() {
     // Setup the prover client.
     let client = ProverClient::from_env();
 
-    // Setup the inputs.
-    let mut stdin = SP1Stdin::new();
-    stdin.write(&args.n);
+    // Setup test inputs
+    // US IP - Google DNS (should return true = excluded from France)
+    let ip: u32 = 134_744_072; // 8.8.8.8
+                               // France IP - OVH (should return false = NOT excluded, IS in France)
+                               // let ip: u32 = 1_534_132_225;  // 91.121.0.1
 
-    println!("n: {}", args.n);
+    // France IP range (OVH: 91.121.0.0 - 91.121.31.255)
+    let excluded_ranges: Vec<(u32, u32)> = vec![(1_534_132_224, 1_534_140_415)];
+
+    // Public inputs
+    let excluded_countries: Vec<u16> = vec![250]; // France ISO code
+    let timestamp: u32 = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("System clock is before Unix epoch")
+        .as_secs() as u32;
+
+    // Write inputs to stdin (must match order in program!)
+    let mut stdin = SP1Stdin::new();
+    stdin.write(&ip);
+    stdin.write(&excluded_ranges);
+    stdin.write(&excluded_countries);
+    stdin.write(&timestamp);
+
+    println!(
+        "Testing IP: {} against excluded countries: {:?}",
+        ip, excluded_countries
+    );
 
     if args.execute {
         // Execute the program
-        let (output, report) = client.execute(FIBONACCI_ELF, &stdin).run().unwrap();
+        let (output, report) = client.execute(ZKIP_ELF, &stdin).run().unwrap();
         println!("Program executed successfully.");
 
         // Read the output.
         let decoded = PublicValuesStruct::abi_decode(output.as_slice()).unwrap();
-        let PublicValuesStruct { n, a, b } = decoded;
-        println!("n: {}", n);
-        println!("a: {}", a);
-        println!("b: {}", b);
+        let PublicValuesStruct {
+            is_excluded,
+            timestamp,
+            excluded_countries,
+        } = decoded;
 
-        let (expected_a, expected_b) = fibonacci_lib::fibonacci(n);
-        assert_eq!(a, expected_a);
-        assert_eq!(b, expected_b);
-        println!("Values are correct!");
+        println!("Result: is_excluded = {}", is_excluded);
+        println!("Timestamp: {}", timestamp);
+        println!("Checked countries: {:?}", excluded_countries);
+
+        // Verify against local computation
+        let expected = zkip_lib::is_excluded(ip, excluded_ranges.clone());
+        assert_eq!(is_excluded, expected);
+        println!("Verification passed!");
 
         // Record the number of cycles executed.
         println!("Number of cycles: {}", report.total_instruction_count());
     } else {
         // Setup the program for proving.
-        let (pk, vk) = client.setup(FIBONACCI_ELF);
+        let (pk, vk) = client.setup(ZKIP_ELF);
 
         // Generate the proof
         let proof = client

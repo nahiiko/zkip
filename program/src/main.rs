@@ -1,28 +1,30 @@
-//! A simple program that takes a number `n` as input, and writes the `n-1`th and `n`th fibonacci
-//! number as an output.
+//! zkip - Zero-knowledge IP location proof
+//! Proves an IP is NOT from specified countries without revealing the IP.
 
-// These two lines are necessary for the program to properly compile.
-//
-// Under the hood, we wrap your main function with some extra code so that it behaves properly
-// inside the zkVM.
 #![no_main]
 sp1_zkvm::entrypoint!(main);
 
 use alloy_sol_types::SolType;
-use fibonacci_lib::{fibonacci, PublicValuesStruct};
+use zkip_lib::{is_excluded, PublicValuesStruct};
 
 pub fn main() {
-    // Read an input to the program.
-    //
-    // Behind the scenes, this compiles down to a custom system call which handles reading inputs
-    // from the prover.
-    let n = sp1_zkvm::io::read::<u32>();
+    // Read private inputs
+    let ip = sp1_zkvm::io::read::<u32>();
+    let excluded_ranges = sp1_zkvm::io::read::<Vec<(u32, u32)>>();
 
-    // Compute the n'th fibonacci number using a function from the workspace lib crate.
-    let (a, b) = fibonacci(n);
+    // Read public inputs
+    let excluded_countries = sp1_zkvm::io::read::<Vec<u16>>();
+    let timestamp = sp1_zkvm::io::read::<u32>();
+
+    // Check if IP is NOT in any excluded range
+    let is_excluded = is_excluded(ip, excluded_ranges);
 
     // Encode the public values of the program.
-    let bytes = PublicValuesStruct::abi_encode(&PublicValuesStruct { n, a, b });
+    let bytes = PublicValuesStruct::abi_encode(&PublicValuesStruct {
+        is_excluded,
+        timestamp,
+        excluded_countries,
+    });
 
     // Commit to the public values of the program. The final proof will have a commitment to all the
     // bytes that were committed to.

@@ -1,22 +1,21 @@
 use alloy_sol_types::sol;
 
 sol! {
-    /// The public values encoded as a struct that can be easily deserialized inside Solidity.
-    struct PublicValuesStruct {
-        uint32 n;
-        uint32 a;
-        uint32 b;
-    }
+   struct PublicValuesStruct{
+    bool is_excluded;
+    uint32 timestamp;
+    uint16[] excluded_countries;  // ISO 3166-1 numeric codes (840=US, 250=FR, etc.)
+   }
 }
 
-/// Compute the n'th fibonacci number (wrapping around on overflows), using normal Rust code.
-pub fn fibonacci(n: u32) -> (u32, u32) {
-    let mut a = 0u32;
-    let mut b = 1u32;
-    for _ in 0..n {
-        let c = a.wrapping_add(b);
-        a = b;
-        b = c;
+/// Check if an IP address is excluded from the specified country ranges.
+/// Returns true if IP is NOT in any excluded range (user is clear).
+/// Returns false if IP IS in an excluded range (user is from blocked country).
+pub fn is_excluded(ip: u32, excluded_ranges: Vec<(u32, u32)>) -> bool {
+    for (start, end) in excluded_ranges {
+        if ip >= start && ip <= end {
+            return false;
+        }
     }
-    (a, b)
+    true
 }
