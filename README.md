@@ -127,37 +127,71 @@ Or let it build automatically when running the script.
 Test the logic without generating a proof:
 
 ```sh
-cd script
-cargo run --release -- --execute
+cargo run --release -- --execute --ip 8.8.8.8 --exclude FR,US
 ```
 
-### 3. Generate a Proof
+This runs the ZK circuit locally and outputs the result without generating a cryptographic proof.
+
+### 3. Generate a Proof (Local)
 
 ```sh
-cd script
-cargo run --release -- --prove
+cargo run --release -- --prove --ip 8.8.8.8 --exclude FR
 ```
+
+Local proving is slow (minutes to hours depending on hardware). For production, use the network.
 
 ### 4. Use the Prover Network
 
-For faster proving:
+The [Succinct Prover Network](https://docs.succinct.xyz/docs/sp1/prover-network/quickstart) provides fast, distributed proof generation.
+
+**Setup:**
+
+1. Generate a key pair: `cast wallet new` (or export from Metamask)
+2. Get [PROVE tokens](https://docs.succinct.xyz/docs/sp1/prover-network/quickstart) on Ethereum Mainnet
+3. Deposit PROVE at [Succinct Explorer](https://explorer.succinct.xyz/)
+4. Configure environment:
 
 ```sh
 cp .env.example .env
-# Set SP1_PROVER=network and NETWORK_PRIVATE_KEY=...
+```
 
-cd script
-cargo run --release -- --prove
+```env
+SP1_PROVER=network
+NETWORK_PRIVATE_KEY=0x...  # Your requester account private key
+```
+
+5. Run:
+
+```sh
+cargo run --release -- --prove --ip 8.8.8.8 --exclude FR
 ```
 
 ### 5. Generate EVM-Compatible Proof
 
-For on-chain verification (requires 16GB+ RAM):
+For on-chain verification (requires network or 16GB+ RAM locally):
 
 ```sh
-cd script
-cargo run --release --bin evm -- --system groth16
+# Groth16 (smaller proof, higher gas to generate)
+cargo run --release --bin evm -- --ip 8.8.8.8 --exclude FR --system groth16
+
+# PLONK (larger proof, no trusted setup)
+cargo run --release --bin evm -- --ip 8.8.8.8 --exclude FR --system plonk
 ```
+
+### CLI Options
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--ip` | IP address to test | `8.8.8.8` |
+| `--exclude` | Comma-separated country codes (ISO 3166-1 alpha-2) | `FR` |
+| `--refresh` | Force refresh the GeoIP database | `false` |
+| `--execute` | Run without proof (main.rs only) | - |
+| `--prove` | Generate proof (main.rs only) | - |
+| `--system` | Proof system: `groth16` or `plonk` (evm.rs only) | `groth16` |
+
+### GeoIP Database
+
+The CLI automatically fetches IP-to-country data from [ip-location-db](https://github.com/sapics/ip-location-db) via jsDelivr CDN. The database is cached locally for 30 days. Use `--refresh` to force an update.
 
 ## API Design (Future)
 
@@ -182,12 +216,14 @@ Response:
 
 🚧 **Proof of Concept**
 
-### Phase 1 (Current): ZK Proof Core
+### Phase 1: ZK Proof Core ✅
 
-- [ ] IP range data structure
-- [ ] Multi-country exclusion logic
-- [ ] ZK circuit implementation
-- [ ] CLI testing
+- [x] IP range data structure (u32 start/end tuples)
+- [x] Multi-country exclusion logic
+- [x] ZK circuit implementation (SP1 zkVM)
+- [x] CLI with `--ip`, `--exclude`, `--refresh` flags
+- [x] Dynamic GeoIP database fetching (30-day cache)
+- [x] EVM-compatible proofs (Groth16/PLONK)
 
 ### Phase 2 (Future): API Server
 
@@ -195,10 +231,15 @@ Response:
 - [ ] IP extraction from HTTP request
 - [ ] Proof generation service
 
-### Phase 3 (Future): Client Integration
+### Phase 3 (Future): On-Chain Verification
 
-- [ ] Wallet connection
+- [ ] Solidity verifier contract
+- [ ] Contract deployment scripts
+
+### Phase 4 (Future): Client Integration
+
 - [ ] Frontend integration
+- [ ] Proof storage and retrieval
 
 ## Privacy Model
 
