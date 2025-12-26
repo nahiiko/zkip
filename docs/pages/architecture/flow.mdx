@@ -1,20 +1,50 @@
 # Flow
 
-```mermaid
-sequenceDiagram
-    participant User as User (wallet: 0x123...)
-    participant API as Your API (zkip)
-    participant Prover as SP1 Prover
-
-    User->>+API: POST /prove<br/>{excluded: ["FR", "DE"], wallet: "0x123..."}
-    Note over API: Extract IP from TCP connection<br/>Load IP to country range table
-
-    API->>+Prover: Private inputs: IP + full range table<br/>Public input: excluded countries
-    Note over Prover: ZK Circuit executes:<br/>1. Lookup IP in range table<br/>2. Check if country in excluded list<br/>3. Output: is_excluded = true/false
-    Prover-->>-API: proof + is_excluded
-
-    Note over API: Discard IP from memory
-    API-->>-User: {proof, is_excluded, timestamp}
-
-    Note over User: Store proof for compliance audit<br/>No IP ever stored
 ```
+┌──────────────┐                    ┌──────────────┐                    ┌──────────────┐
+│              │                    │              │                    │              │
+│     User     │                    │  Your API    │                    │ SP1 Prover   │
+│ (0x123...)   │                    │   (zkip)     │                    │              │
+│              │                    │              │                    │              │
+└──────┬───────┘                    └──────┬───────┘                    └──────┬───────┘
+       │                                   │                                   │
+       │  POST /prove                      │                                   │
+       │  {excluded: ["FR", "DE"],         │                                   │
+       │   wallet: "0x123..."}             │                                   │
+       ├──────────────────────────────────▶│                                   │
+       │                                   │                                   │
+       │                                   │  Extract IP from TCP connection   │
+       │                                   │  Load IP-to-country range table   │
+       │                                   │                                   │
+       │                                   │  Private: IP + range table        │
+       │                                   │  Public: excluded countries       │
+       │                                   ├──────────────────────────────────▶│
+       │                                   │                                   │
+       │                                   │                                   │  ZK Circuit:
+       │                                   │                                   │  1. Lookup IP
+       │                                   │                                   │  2. Check country
+       │                                   │                                   │  3. Output result
+       │                                   │                                   │
+       │                                   │  proof + is_excluded              │
+       │                                   │◀──────────────────────────────────┤
+       │                                   │                                   │
+       │  Discard IP from memory           │                                   │
+       │                                   │                                   │
+       │  {proof, is_excluded, timestamp}  │                                   │
+       │◀──────────────────────────────────┤                                   │
+       │                                   │                                   │
+       │  Store proof for audit            │                                   │
+       │  (No IP ever stored)              │                                   │
+       │                                   │                                   │
+```
+
+**Flow Steps:**
+
+1. **User Request**: Client sends excluded countries list and wallet address
+2. **IP Extraction**: Server extracts IP from TCP connection (transient, in memory only)
+3. **Proof Generation**: SP1 Prover runs ZK circuit with:
+   - **Private inputs**: User's IP address + full country range table
+   - **Public inputs**: List of excluded countries
+4. **Circuit Execution**: Proves IP is NOT in any excluded country
+5. **Response**: Server returns proof and result, then discards IP from memory
+6. **Audit Trail**: User stores proof for compliance (without revealing IP)
