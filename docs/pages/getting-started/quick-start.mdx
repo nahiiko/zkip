@@ -1,0 +1,53 @@
+# Quick Start
+
+## 1. Build the Program
+
+```sh
+cd program && cargo prove build
+```
+
+Or let it build automatically when running the script.
+
+## 2. Execute (No Proof)
+
+Test the logic without generating a proof:
+
+```sh
+cargo run --release -- --execute --ip 8.8.8.8 --exclude FR,US
+```
+
+This runs the ZK circuit locally and outputs the result without generating a cryptographic proof.
+
+## 3. Generate a Proof (Local)
+
+```sh
+cargo run --release -- --prove --ip 8.8.8.8 --exclude FR
+```
+
+Local proving is slow (minutes to hours depending on hardware). For production, use the network.
+
+## 4. Use the Prover Network
+
+The [Succinct Prover Network](https://docs.succinct.xyz/docs/sp1/prover-network/quickstart) provides fast, distributed proof generation.
+
+**Setup:**
+
+1. Generate a key pair: `cast wallet new` (or export from Metamask)
+2. Get [PROVE tokens](https://docs.succinct.xyz/docs/sp1/prover-network/quickstart) on Ethereum Mainnet
+3. Deposit PROVE at [Succinct Explorer](https://explorer.succinct.xyz/)
+4. Configure environment:
+
+```sh
+cp .env.example .env
+```
+
+```env
+SP1_PROVER=network
+NETWORK_PRIVATE_KEY=0x...  # Your requester account private key
+```
+
+5. Run:
+
+```sh
+cargo run --release -- --prove --ip 8.8.8.8 --exclude FR
+```

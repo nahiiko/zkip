@@ -1,0 +1,18 @@
+# What is zkip?
+
+**zkip** is a zero-knowledge proof library for proving a user's IP address is **not** from a specified set of countries without revealing the actual IP address. Built with [SP1](https://github.com/succinctlabs/sp1) zkVM.
+
+## Motivation
+
+Many businesses and developers end up storing IP addresses for various reasons:
+
+- Regulatory compliance (tax laws, content licensing, gambling restrictions)
+- Proving user location to auditors
+- Fraud prevention and geo-restrictions
+- Analytics and service customization
+
+But storing IP addresses creates privacy concerns and GDPR obligations. **What if you could prove location without storing the IP?**
+
+(For example: In France, digital service providers must charge VAT on all sales unless they can prove the customer's location. This typically requires storing IP addresses, which is a privacy concern.)
+
+**zkip's solution**: Generate a zero-knowledge proof that verifies "this IP is not from countries X, Y, Z" without revealing or storing the actual IP address. You get verifiable location proofs while keeping user data private.
