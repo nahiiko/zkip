@@ -1,0 +1,12 @@
+{
+  "name": "zkip",
+  "version": "0.1.0",
+  "scripts": {
+    "docs:dev": "vocs dev",
+    "docs:build": "vocs build",
+    "docs:preview": "vocs preview"
+  },
+  "dependencies": {
+    "vocs": "latest"
+  }
+}
