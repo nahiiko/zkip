@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "scripts": {
     "docs:dev": "vocs dev",
-    "docs:build": "vocs build",
+    "docs:build": "npx playwright install --with-deps chromium && vocs build",
     "docs:preview": "vocs preview"
   },
   "dependencies": {
