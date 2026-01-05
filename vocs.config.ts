@@ -3,7 +3,7 @@ import { defineConfig } from "vocs";
 export default defineConfig({
   title: "🦀 zkip",
   baseUrl: "https://zkip.nahiko.dev",
-  description: "Zero-knowledge proof library for proving IP location privacy.",
+  description: "Zero-knowledge proof library for proving IP locations.",
   iconUrl: "/favicon.svg",
   ogImageUrl: "/og.png",
   sidebar: [
