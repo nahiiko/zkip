@@ -5,6 +5,7 @@ export default defineConfig({
   baseUrl: "https://zkip.nahiko.dev",
   description: "Zero-knowledge proof library for proving IP location privacy.",
   iconUrl: "/favicon.svg",
+  ogImageUrl: "/og.png",
   sidebar: [
     {
       text: "Introduction",
