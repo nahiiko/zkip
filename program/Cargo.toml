@@ -2,6 +2,7 @@
 version = "0.1.0"
 name = "zkip-program"
 edition = "2021"
+license.workspace = true
 
 [dependencies]
 alloy-sol-types = { workspace = true }

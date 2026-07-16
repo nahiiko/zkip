@@ -3,6 +3,7 @@ version = "0.1.0"
 name = "zkip-script"
 edition = "2021"
 default-run = "zkip"
+license.workspace = true
 
 [[bin]]
 name = "zkip"

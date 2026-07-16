@@ -253,4 +253,14 @@ Response:
 
 ## License
 
-MIT
+Original zkip code is licensed under the [GNU Affero General Public License
+v3.0 only](LICENSE). If you run a modified version as a network service, you
+must offer its corresponding source to users as required by AGPLv3 section 13.
+
+This repository was bootstrapped from Succinct Labs' MIT-licensed
+[SP1 Project Template](https://github.com/succinctlabs/sp1-project-template).
+Succinct's copyright and MIT notice remain in [LICENSE-MIT](LICENSE-MIT).
+The committed country-code dataset has a separate CC BY-SA 4.0 license. See
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for provenance and attribution.
+
+Dependencies, including SP1, retain their respective licenses.
